@@ -6,6 +6,7 @@ from importlib import import_module, metadata, reload
 from pathlib import Path
 from typing import Annotated, Any, Optional
 
+import typer
 from typer import Argument, Option, Typer
 
 from prosperity3bt.data import has_day_data
@@ -194,7 +195,10 @@ def cli(
     no_progress: Annotated[bool, Option("--no-progress", help="Don't show progress bars.")] = False,
     original_timestamps: Annotated[bool, Option("--original-timestamps", help="Preserve original timestamps in output log rather than making them increase across days.")] = False,
     version: Annotated[bool, Option("--version", "-v", help="Show the program's version number and exit.", is_eager=True, callback=version_callback)] = False,
+    grid_search: Annotated[bool, Option("--grid-search", help="Run the backtester in grid search mode. NOTE: MUST PROVIDE --param-file arg.")] = False,
+    param_file: Annotated[Optional[Path], Option("--param-file", help="Path to the grid search parameter file.", show_default=False, exists=True, file_okay=True, dir_okay=False, resolve_path=True)] = None,
 ) -> None:  # fmt: skip
+    
     if out is not None and no_out:
         print("Error: --out and --no-out are mutually exclusive")
         sys.exit(1)
@@ -208,6 +212,9 @@ def cli(
     if not hasattr(trader_module, "Trader"):
         print(f"{algorithm} does not expose a Trader class")
         sys.exit(1)
+    
+    if grid_search :
+        raise typer.BadParameter("You must provide --param-file when --grid-search is enabled.")
 
     file_reader = parse_data(data)
     parsed_days = parse_days(file_reader, days)
