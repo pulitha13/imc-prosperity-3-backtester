@@ -258,7 +258,7 @@ def cli(
             reload(trader_module)
 
             result = run_backtest(
-                trader_module.Trader(params),
+                trader_module.Trader(),
                 file_reader,
                 round_num,
                 day_num,
