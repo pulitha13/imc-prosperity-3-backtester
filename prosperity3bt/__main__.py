@@ -15,6 +15,8 @@ from prosperity3bt.models import BacktestResult, TradeMatchingMode
 from prosperity3bt.open import open_visualizer
 from prosperity3bt.runner import run_backtest
 
+import json
+import itertools
 
 def parse_algorithm(algorithm: Path) -> Any:
     sys.path.append(str(algorithm.parent))
@@ -162,6 +164,7 @@ def print_overall_summary(results: list[BacktestResult]) -> None:
         total_profit += profit
 
     print(f"Total profit: {total_profit:,.0f}")
+    return total_profit
 
 
 def format_path(path: Path) -> str:
@@ -213,8 +216,30 @@ def cli(
         print(f"{algorithm} does not expose a Trader class")
         sys.exit(1)
     
-    if grid_search :
-        raise typer.BadParameter("You must provide --param-file when --grid-search is enabled.")
+    if grid_search:
+
+        if not param_file:
+            raise typer.BadParameter("You must provide --param-file when --grid-search is enabled.")
+    
+        if vis:
+            raise typer.BadParameter("You cannot run visualizer when --grid-search is enabled.")
+
+    
+    params = None
+    if param_file:
+
+        if not grid_search:
+            raise typer.BadParameter("You cannot use --param-file when --grid-search is not enabled.")
+            
+        with open(param_file, 'r') as file:
+            try:
+                params = json.load(file)
+            except Exception as e:
+                raise typer.BadParameter(f"Poor --param-file formatting {e}")
+
+        # Get the parameter names and the list of value combinations
+        keys = params.keys()
+        param_combos = itertools.product(*params.values())
 
     file_reader = parse_data(data)
     parsed_days = parse_days(file_reader, days)
@@ -222,33 +247,74 @@ def cli(
 
     show_progress_bars = not no_progress and not print_output
 
-    results = []
-    for round_num, day_num in parsed_days:
-        print(f"Backtesting {algorithm} on round {round_num} day {day_num}")
 
-        reload(trader_module)
+    if not grid_search:
+        # TODO: Potentially collapse this whole block into one function call...
+        results = []
+        for round_num, day_num in parsed_days:
+            print(f"Backtesting {algorithm} on round {round_num} day {day_num}")
 
-        result = run_backtest(
-            trader_module.Trader(),
-            file_reader,
-            round_num,
-            day_num,
-            print_output,
-            match_trades,
-            True,
-            show_progress_bars,
-        )
+            reload(trader_module)
 
-        print_day_summary(result)
+            result = run_backtest(
+                trader_module.Trader(params),
+                file_reader,
+                round_num,
+                day_num,
+                print_output,
+                match_trades,
+                True,
+                show_progress_bars,
+            )
+
+            print_day_summary(result)
+            if len(parsed_days) > 1:
+                print()
+
+            results.append(result)
+
         if len(parsed_days) > 1:
-            print()
+            print_overall_summary(results)
+    
+    else:
 
-        results.append(result)
+        print("\n" + "=" * 60)
+        for combo in param_combos:
+            
+            param_set = dict(zip(keys, combo))
+            results = []
 
-    if len(parsed_days) > 1:
-        print_overall_summary(results)
+            print(f"Run with parameters: {param_set}")
 
-    if output_file is not None:
+            for round_num, day_num in parsed_days:
+                print(f"Backtesting {algorithm} on round {round_num} day {day_num}")
+
+                reload(trader_module)
+
+                result = run_backtest(
+                    trader_module.Trader(param_set),
+                    file_reader,
+                    round_num,
+                    day_num,
+                    print_output,
+                    match_trades,
+                    True,
+                    show_progress_bars,
+                )
+
+                # print_day_summary(result)
+                # if len(parsed_days) > 1:
+                #     print()
+
+                results.append(result)
+
+            
+            if len(parsed_days) > 1:
+                # TODO: Just keep track of best profit lol
+                total_profit = print_overall_summary(results)
+            print("=" * 60)
+
+    if output_file is not None and not grid_search:
         merged_results = reduce(lambda a, b: merge_results(a, b, merge_pnl, not original_timestamps), results)
         write_output(output_file, merged_results)
         print(f"\nSuccessfully saved backtest results to {format_path(output_file)}")
