@@ -17,6 +17,7 @@ from prosperity3bt.runner import run_backtest
 
 import json
 import itertools
+import heapq
 
 def parse_algorithm(algorithm: Path) -> Any:
     sys.path.append(str(algorithm.parent))
@@ -279,6 +280,8 @@ def cli(
     else:
 
         print("\n" + "=" * 60)
+        grid_results = []
+        iter = 0
         for combo in param_combos:
             
             param_set = dict(zip(keys, combo))
@@ -310,9 +313,26 @@ def cli(
 
             
             if len(parsed_days) > 1:
-                # TODO: Just keep track of best profit lol
+
                 total_profit = print_overall_summary(results)
+                grid_result = {'profit': total_profit, 'params': param_set}
+                heapq.heappush(grid_results, (total_profit, iter, grid_result))
+
+                # This is necessary for tie-breaking = profits
+                iter += 1             
+            
             print("=" * 60)
+        
+        # TODO: Create print grid results which prints unhardcoded top N
+        top_results = heapq.nlargest(5, grid_results)
+        top_results = [entry[2] for entry in top_results]
+
+        print(f"TOTAL RESULTS\n")
+        print(f"1ST BEST TOTAL PROFIT: {top_results[0]['profit']}\nASSOCIATED PARAMS: {top_results[0]['params']}")
+        print(f"2ND BEST TOTAL PROFIT: {top_results[1]['profit']}\nASSOCIATED PARAMS: {top_results[1]['params']}")
+        print(f"3RD BEST TOTAL PROFIT: {top_results[2]['profit']}\nASSOCIATED PARAMS: {top_results[2]['params']}")
+        print(f"4TH BEST TOTAL PROFIT: {top_results[3]['profit']}\nASSOCIATED PARAMS: {top_results[3]['params']}")
+        print(f"5TH BEST TOTAL PROFIT: {top_results[4]['profit']}\nASSOCIATED PARAMS: {top_results[4]['params']}")
 
     if output_file is not None and not grid_search:
         merged_results = reduce(lambda a, b: merge_results(a, b, merge_pnl, not original_timestamps), results)
