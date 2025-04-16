@@ -74,9 +74,12 @@ Data for the following rounds is included:
 - Round 1: prices and anonymized trades data on RAINFOREST_RESIN, KELP, and SQUID_INK.
 - Round 2: prices and anonymized trades data on RAINFOREST_RESIN, KELP, SQUID_INK, CROISSANTS, JAMS, DJEMBES, PICNIC_BASKET1, and PICNIC_BASKET2.
 - Round 3: prices and anonymized trades data on RAINFOREST_RESIN, KELP, SQUID_INK, CROISSANTS, JAMS, DJEMBES, PICNIC_BASKET1, PICNIC_BASKET2, VOLCANIC_ROCK, VOLCANIC_ROCK_VOUCHER_9500, VOLCANIC_ROCK_VOUCHER_9750, VOLCANIC_ROCK_VOUCHER_10000, VOLCANIC_ROCK_VOUCHER_10250, and VOLCANIC_ROCK_VOUCHER_10500.
+- Round 4: prices and anonymized trades data on RAINFOREST_RESIN, KELP, SQUID_INK, CROISSANTS, JAMS, DJEMBES, PICNIC_BASKET1, PICNIC_BASKET2, VOLCANIC_ROCK, VOLCANIC_ROCK_VOUCHER_9500, VOLCANIC_ROCK_VOUCHER_9750, VOLCANIC_ROCK_VOUCHER_10000, VOLCANIC_ROCK_VOUCHER_10250, VOLCANIC_ROCK_VOUCHER_10500, and MAGNIFICENT_MACARONS.
 - Round 6: prices and anonymized trades data that was used during submission runs. Round 6 day X represents the submission data of round X, where X = 0 means the tutorial round and X = 6 means the submission data of round 2 before it was updated because of RAINFOREST_RESIN data this year and AMETHYSTS data last year being identical. The anonymized trades data is derived from the submission of an algorithm that places no orders.
 - Round 7: prices data that was used during end-of-round runs. Round 7 day X represents the submission data of round X. The exception to the rule is round 1, its old end-of-round data can be found in round 7 day 0 and its new data can be found in round 7 day 1.
 - Round 8: the version of round 2 data before it was updated because of RAINFOREST_RESIN data this year and AMETHYSTS data last year being identical.
+
+Conversions and conversion observations are not supported.
 
 ## Environment Variables
 
