@@ -6,7 +6,16 @@ from IPython.utils.io import Tee
 from tqdm import tqdm
 
 from prosperity3bt.data import LIMITS, BacktestData, read_day_data
-from prosperity3bt.datamodel import Listing, Observation, Order, OrderDepth, Symbol, Trade, TradingState, ConversionObservation
+from prosperity3bt.datamodel import (
+    ConversionObservation,
+    Listing,
+    Observation,
+    Order,
+    OrderDepth,
+    Symbol,
+    Trade,
+    TradingState,
+)
 from prosperity3bt.file_reader import FileReader
 from prosperity3bt.models import (
     ActivityLogRow,
@@ -45,12 +54,11 @@ def prepare_state(state: TradingState, data: BacktestData) -> None:
             exportTariff=observation_row.exportTariff,
             importTariff=observation_row.importTariff,
             sugarPrice=observation_row.sugarPrice,
-            sunlightIndex=observation_row.sunlightIndex
+            sunlightIndex=observation_row.sunlightIndex,
         )
 
         state.observations = Observation(
-            plainValueObservations={},
-            conversionObservations={"MAGNIFICENT_MACARONS": conversion_observation}
+            plainValueObservations={}, conversionObservations={"MAGNIFICENT_MACARONS": conversion_observation}
         )
 
 

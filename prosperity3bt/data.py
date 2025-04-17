@@ -1,7 +1,7 @@
 from collections import defaultdict
 from dataclasses import dataclass
 
-from prosperity3bt.datamodel import ConversionObservation, Observation, Symbol, Trade
+from prosperity3bt.datamodel import Symbol, Trade
 from prosperity3bt.file_reader import FileReader
 
 LIMITS = {
@@ -73,7 +73,9 @@ class BacktestData:
     profit_loss: dict[Symbol, float]
 
 
-def create_backtest_data(round_num: int, day_num: int, prices: list[PriceRow], trades: list[Trade], observations: list[ObservationRow]) -> BacktestData:
+def create_backtest_data(
+    round_num: int, day_num: int, prices: list[PriceRow], trades: list[Trade], observations: list[ObservationRow]
+) -> BacktestData:
     prices_by_timestamp: dict[int, dict[Symbol, PriceRow]] = defaultdict(dict)
     for row in prices:
         prices_by_timestamp[row.timestamp][row.product] = row
@@ -121,7 +123,7 @@ def read_observations(file_reader: FileReader, round_num: int, day_num: int) -> 
                     exportTariff=float(columns[4]),
                     importTariff=float(columns[5]),
                     sugarPrice=float(columns[6]),
-                    sunlightIndex=float(columns[7])
+                    sunlightIndex=float(columns[7]),
                 )
             )
 
