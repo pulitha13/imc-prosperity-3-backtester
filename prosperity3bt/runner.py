@@ -139,7 +139,7 @@ def enforce_limits(
             sandbox_log_lines.append(f"Orders for product {product} exceeded limit of {LIMITS[product]} set")
             orders.pop(product)
     
-    if conversions > 10 or conversions < -10 or (state.position.get('MAGNIFICENT_MACARONS', 0) + conversions) < 0:
+    if conversions and (conversions > 10 or conversions < -10 or (state.position.get('MAGNIFICENT_MACARONS', 0) + conversions) < 0):
         sandbox_log_lines.append(f"Invalid conversion {conversions}")
         conversions = 0
     
@@ -312,20 +312,24 @@ def match_orders(
         result.trades.extend([TradeRow(trade) for trade in remaining_market_trades])
 
 
-def match_conversions(state: TradingState, data: BacktestData, orders: dict[Symbol, list[Order]], conversions):
+def match_conversions(state: TradingState, data: BacktestData, conversions: int):
+
+    if None == conversions: return
 
     for product_symb, observation in state.observations.conversionObservations.items():
         
-        if conversions > 0:
+        if conversions < 0:
 
-            state.position[product_symb] = state.position.get(product_symb, 0) + conversions
+            state.position[product_symb] = state.position[product_symb] + conversions
             implied_bid = observation.bidPrice - observation.exportTariff - observation.transportFees
+            print(f"convert - {implied_ask * conversions}")
             data.profit_loss[product_symb] -= implied_bid * conversions 
     
-        elif conversions < 0:
-            state.position[product_symb] = state.position.get(product_symb, 0) - conversions
+        elif conversions > 0:
+            state.position[product_symb] = state.position[product_symb] + conversions
             implied_ask = observation.askPrice + observation.importTariff + observation.transportFees
-            data.profit_loss[product_symb] += implied_ask * conversions
+            print(f"convert + {implied_ask * -conversions}")
+            data.profit_loss[product_symb] -= implied_ask * conversions
         
 def run_backtest(
     trader,
@@ -394,7 +398,7 @@ def run_backtest(
 
         type_check_orders(orders)
         create_activity_logs(state, data, result)
-        enforce_limits(state, data, orders, conversions, sandbox_row)
+        enforce_limits(state, data, orders, sandbox_row, conversions)
         match_conversions(state, data, conversions)
         match_orders(state, data, orders, result, trade_matching_mode)
 
