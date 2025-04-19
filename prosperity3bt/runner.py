@@ -322,13 +322,13 @@ def match_conversions(state: TradingState, data: BacktestData, conversions: int)
 
             state.position[product_symb] = state.position[product_symb] + conversions
             implied_bid = observation.bidPrice - observation.exportTariff - observation.transportFees
-            print(f"convert - {implied_ask * conversions}")
+            # print(f"convert - {implied_ask * conversions}")
             data.profit_loss[product_symb] -= implied_bid * conversions 
     
         elif conversions > 0:
             state.position[product_symb] = state.position[product_symb] + conversions
             implied_ask = observation.askPrice + observation.importTariff + observation.transportFees
-            print(f"convert + {implied_ask * -conversions}")
+            # print(f"convert + {implied_ask * -conversions}")
             data.profit_loss[product_symb] -= implied_ask * conversions
         
 def run_backtest(
