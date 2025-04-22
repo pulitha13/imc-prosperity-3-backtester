@@ -312,7 +312,7 @@ def cli(
                 results.append(result)
 
             
-            if len(parsed_days) > 1:
+            if len(parsed_days) > 0:
 
                 total_profit = print_overall_summary(results)
                 grid_result = {'profit': total_profit, 'params': param_set}
