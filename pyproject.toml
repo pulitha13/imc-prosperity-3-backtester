@@ -28,6 +28,7 @@ build-backend = "setuptools.build_meta"
 
 [project.scripts]
 prosperity3bt = "prosperity3bt.__main__:main"
+prosperity4 = "prosperity4.__main__:main"
 
 [project.urls]
 Repository = "https://github.com/jmerle/imc-prosperity-3-backtester"
@@ -35,10 +36,11 @@ Issues = "https://github.com/jmerle/imc-prosperity-3-backtester/issues"
 Changelog = "https://github.com/jmerle/imc-prosperity-3-backtester/releases"
 
 [tool.setuptools.packages.find]
-include = ["prosperity3bt", "prosperity3bt.*"]
+include = ["prosperity3bt", "prosperity3bt.*", "prosperity4", "prosperity4.*"]
 
 [tool.setuptools.package-data]
 prosperity3bt = ["resources/*/*.csv"]
+prosperity4 = ["resources/*/*.csv"]
 
 [tool.uv]
 dev-dependencies = [
