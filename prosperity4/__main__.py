@@ -13,6 +13,7 @@ from prosperity4.file_reader import FileReader, FileSystemReader, PackageResourc
 from prosperity4.models import BacktestResult, TradeMatchingMode
 from prosperity4.open import open_visualizer
 from prosperity4.runner import run_backtest
+import json
 
 DIST_NAME = "prosperity3bt"
 
@@ -61,17 +62,21 @@ def parse_days(file_reader: FileReader, days: list[str]) -> list[tuple[int, int]
 
     return parsed_days
 
+def parse_out(out: Optional[Path], no_out: bool, csv: bool) -> Optional[Path]:
 
-def parse_out(out: Optional[Path], no_out: bool) -> Optional[Path]:
     if out is not None:
         return out
 
     if no_out:
         return None
 
+    if csv:
+        timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
+        # Return a directory path instead of a .log file
+        return Path.cwd() / "backtests" / timestamp
+
     timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
     return Path.cwd() / "backtests" / f"{timestamp}.log"
-
 
 def print_day_summary(result: BacktestResult) -> None:
     last_timestamp = result.activity_logs[-1].timestamp
@@ -126,7 +131,7 @@ def merge_results(
     return BacktestResult(a.round_num, a.day_num, sandbox_logs, activity_logs, trades)
 
 
-def write_output(output_file: Path, merged_results: BacktestResult) -> None:
+def write_output_json(output_file: Path, merged_results: BacktestResult) -> None:
     output_file.parent.mkdir(parents=True, exist_ok=True)
     with output_file.open("w+", encoding="utf-8") as file:
         file.write("Sandbox logs:\n")
@@ -138,12 +143,48 @@ def write_output(output_file: Path, merged_results: BacktestResult) -> None:
             "day;timestamp;product;bid_price_1;bid_volume_1;bid_price_2;bid_volume_2;bid_price_3;bid_volume_3;ask_price_1;ask_volume_1;ask_price_2;ask_volume_2;ask_price_3;ask_volume_3;mid_price;profit_and_loss\n"
         )
         file.write("\n".join(map(str, merged_results.activity_logs)))
-
         file.write("\n\n\n\n\nTrade History:\n")
         file.write("[\n")
         file.write(",\n".join(map(str, merged_results.trades)))
         file.write("]")
 
+def write_output_csv(output_base: Path, results: list[BacktestResult]) -> None:
+    if not results:
+        return
+
+    r_num = results[0].round_num
+    # 1. Create the nested directory (e.g., backtests/2026-04-10_18-43-00/r0/)
+    output_dir = output_base / f"r{r_num}"
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    # 2. Write the Sandbox log text file (combined for all days)
+    sandbox_file = output_dir / "sandbox.log"
+    with sandbox_file.open("w+", encoding="utf-8") as s_file:
+        for result in results:
+            s_file.write(f"--- Round {result.round_num} Day {result.day_num} ---\n")
+            for row in result.sandbox_logs:
+                s_file.write(str(row))
+
+    # 3. Write separate CSVs for each day
+    for result in results:
+        r_num = result.round_num
+        d_num = result.day_num
+
+        prices_file = output_dir / f"prices_round_{r_num}_day_{d_num}.csv"
+        with prices_file.open("w+", encoding="utf-8") as file:
+            file.write("day;timestamp;product;bid_price_1;bid_volume_1;bid_price_2;bid_volume_2;bid_price_3;bid_volume_3;ask_price_1;ask_volume_1;ask_price_2;ask_volume_2;ask_price_3;ask_volume_3;mid_price;profit_and_loss\n")
+            file.write("\n".join(map(str, result.activity_logs)))
+
+        trades_file = output_dir / f"trades_round_{r_num}_day_{d_num}.csv"
+        with trades_file.open("w+", encoding="utf-8") as file:
+            file.write("timestamp;buyer;seller;symbol;currency;price;quantity\n")
+            for trade in result.trades:
+                try:
+                    t_dict = json.loads(str(trade).replace("'", '"'))
+                    row = f"{t_dict.get('timestamp', '')};{t_dict.get('buyer', '')};{t_dict.get('seller', '')};{t_dict.get('symbol', '')};{t_dict.get('currency', '')};{t_dict.get('price', '')};{t_dict.get('quantity', '')}"
+                    file.write(row + "\n")
+                except Exception:
+                    pass
 
 def print_overall_summary(results: list[BacktestResult]) -> None:
     print("Profit summary:")
@@ -190,6 +231,7 @@ def cli(
     vis: Annotated[bool, Option("--vis", help="Open backtest results in https://jmerle.github.io/imc-prosperity-3-visualizer/ when done.")] = False,
     out: Annotated[Optional[Path], Option(help="File to save output log to (defaults to backtests/<timestamp>.log).", show_default=False, dir_okay=False, resolve_path=True)] = None,
     no_out: Annotated[bool, Option("--no-out", help="Skip saving output log.")] = False,
+    csv: Annotated[bool, Option("--csv", help="Save output log to csv files instead of json (defaults to backtests/<timestamp>/)")] = False,
     data: Annotated[Optional[Path], Option(help="Path to data directory. Must look similar in structure to https://github.com/jmerle/imc-prosperity-3-backtester/tree/master/prosperity4/resources.", show_default=False, exists=True, file_okay=False, dir_okay=True, resolve_path=True)] = None,
     print_output: Annotated[bool, Option("--print", help="Print the trader's output to stdout while it's running.")] = False,
     match_trades: Annotated[TradeMatchingMode, Option(help="How to match orders against market trades. 'all' matches trades with prices equal to or worse than your quotes, 'worse' matches trades with prices worse than your quotes, 'none' does not match trades against orders at all.")] = TradeMatchingMode.all,
@@ -213,7 +255,7 @@ def cli(
 
     file_reader = parse_data(data)
     parsed_days = parse_days(file_reader, days)
-    output_file = parse_out(out, no_out)
+    output_file = parse_out(out, no_out, csv)
 
     show_progress_bars = not no_progress and not print_output
 
@@ -244,9 +286,12 @@ def cli(
         print_overall_summary(results)
 
     if output_file is not None:
-        merged_results = reduce(lambda a, b: merge_results(a, b, merge_pnl, not original_timestamps), results)
-        write_output(output_file, merged_results)
-        print(f"\nSuccessfully saved backtest results to {format_path(output_file)}")
+        if csv:
+            write_output_csv(output_file, results)
+            print(f"\nSuccessfully saved backtest results to {format_path(output_file)}")
+        else:
+            merged_results = reduce(lambda a, b: merge_results(a, b, merge_pnl, not original_timestamps), results)
+            write_output_json(output_file, merged_results)
 
     if vis and output_file is not None:
         open_visualizer(output_file)
