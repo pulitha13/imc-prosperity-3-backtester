@@ -1,6 +1,6 @@
 [project]
-name = "prosperity3bt"
-description = "Backtester for IMC Prosperity 3 algorithms"
+name = "prosperity4bt"
+description = "Augmented Backtester for IMC Prosperity 4 algorithms from IMC Prosperity 3 Backtester"
 version = "0.0.0"
 readme = "README.md"
 license = {file = "LICENSE"}
@@ -27,7 +27,6 @@ requires = ["setuptools >= 61.0"]
 build-backend = "setuptools.build_meta"
 
 [project.scripts]
-prosperity3bt = "prosperity3bt.__main__:main"
 prosperity4 = "prosperity4.__main__:main"
 bt = "prosperity4.__main__:main"
 
@@ -37,7 +36,7 @@ Issues = "https://github.com/jmerle/imc-prosperity-3-backtester/issues"
 Changelog = "https://github.com/jmerle/imc-prosperity-3-backtester/releases"
 
 [tool.setuptools.packages.find]
-include = ["prosperity3bt", "prosperity3bt.*", "prosperity4", "prosperity4.*"]
+include = [ "prosperity4", "prosperity4.*"]
 
 [tool.setuptools.package-data]
 prosperity3bt = ["resources/*/*.csv"]
@@ -59,5 +58,5 @@ extend-select = ["I"]
 ignore_missing_imports = true
 
 [[tool.mypy.overrides]]
-module = "prosperity3bt.datamodel"
+module = "prosperity4.datamodel"
 ignore_errors = true
