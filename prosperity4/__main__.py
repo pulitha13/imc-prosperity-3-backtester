@@ -258,7 +258,7 @@ def extract_pnl(results: List[BacktestResult]) -> dict:
     return per_day
 
 
-def write_ledger_entry(algorithm: Path, results: List[BacktestResult]) -> None:
+def write_ledger_entry(algorithm: Path, results: List[BacktestResult], note: Optional[str] = None) -> None:
     repo_root = find_git_root(algorithm.parent)
     ledger_path = repo_root / "ledger.jsonl"
 
@@ -278,6 +278,8 @@ def write_ledger_entry(algorithm: Path, results: List[BacktestResult]) -> None:
         "pnl": per_day,
         "total_pnl": total_pnl,
     }
+    if note:
+        entry["note"] = note
 
     with ledger_path.open("a", encoding="utf-8") as f:
         f.write(json.dumps(entry) + "\n")
@@ -310,6 +312,7 @@ def cli(
     no_progress: Annotated[bool, Option("--no-progress", help="Don't show progress bars.")] = False,
     original_timestamps: Annotated[bool, Option("--original-timestamps", help="Preserve original timestamps in output log rather than making them increase across days.")] = False,
     post: Annotated[bool, Option("--post", help="Record backtest results (git info + per-product PnL) to ledger.jsonl in the algorithm's repo root.")] = False,
+    note: Annotated[Optional[str], Option("--note", help="Optional note to attach to the ledger entry (use with --post).", show_default=False)] = None,
     version: Annotated[bool, Option("--version", "-v", help="Show the program's version number and exit.", is_eager=True, callback=version_callback)] = False,
 ) -> None:  # fmt: skip
     if out is not None and no_out:
@@ -370,7 +373,7 @@ def cli(
         open_visualizer(output_file)
 
     if post:
-        write_ledger_entry(algorithm, results)
+        write_ledger_entry(algorithm, results, note=note)
 
 
 def main() -> None:

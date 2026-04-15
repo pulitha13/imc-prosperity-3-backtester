@@ -65,11 +65,13 @@ def print_ledger(ledger_path: Path, n: int = 8, new_index: int = -1) -> None:
     shown = entries[-n:]
     best_i = max(range(total), key=lambda i: entries[i].get("total_pnl", float("-inf")))
 
+    idx_w = len(str(total - 1))
     W = {"ts": 11, "ref": 22, "alg": 14, "days": 16, "pnl": 10}
     sep = "  "
 
-    def row(ts, ref, alg, days, pnl):
+    def row(idx, ts, ref, alg, days, pnl):
         return (
+            f"{idx:<{idx_w}}{sep}"
             f"{ts:<{W['ts']}}{sep}"
             f"{ref:<{W['ref']}}{sep}"
             f"{alg:<{W['alg']}}{sep}"
@@ -77,7 +79,7 @@ def print_ledger(ledger_path: Path, n: int = 8, new_index: int = -1) -> None:
             f"{pnl:>{W['pnl']}}"
         )
 
-    header = row("Date", "Branch@Hash", "Algorithm", "Days", "Total PnL")
+    header = row("#", "Date", "Branch@Hash", "Algorithm", "Days", "Total PnL")
     rule = "─" * len(header)
 
     title = "Backtest Ledger"
@@ -104,7 +106,10 @@ def print_ledger(ledger_path: Path, n: int = 8, new_index: int = -1) -> None:
         elif abs_i == best_i and abs_i != new_index:
             tag = _c("  ★ best", _G)
 
-        print(row(_ts(e.get("timestamp", "")), ref, alg, days, _pnl(pnl_val)) + tag)
+        note = e.get("note", "")
+        note_str = _c(f"  [{note}]", _D) if note else ""
+
+        print(row(abs_i, _ts(e.get("timestamp", "")), ref, alg, days, _pnl(pnl_val)) + tag + note_str)
 
     print(rule)
     best = entries[best_i]
@@ -117,6 +122,8 @@ def main() -> None:
     p = argparse.ArgumentParser(description="Show backtest ledger.")
     p.add_argument("--ledger", type=Path, default=None)
     p.add_argument("-n", type=int, default=8)
+    p.add_argument("--delete", type=int, default=None, metavar="N",
+                   help="Delete entry at index N (0-based, negatives count from end). E.g. --delete -1 removes the last entry.")
     args = p.parse_args()
 
     if args.ledger:
@@ -128,6 +135,16 @@ def main() -> None:
                 ledger_path = cand / "ledger.jsonl"
                 break
         ledger_path = ledger_path or Path.cwd() / "ledger.jsonl"
+
+    if args.delete is not None:
+        lines = [l for l in ledger_path.read_text(encoding="utf-8").splitlines() if l.strip()]
+        idx = args.delete
+        if idx < -len(lines) or idx >= len(lines):
+            print(f"Error: index {idx} out of range (ledger has {len(lines)} entries)")
+            sys.exit(1)
+        del lines[idx]
+        ledger_path.write_text("\n".join(lines) + ("\n" if lines else ""), encoding="utf-8")
+        print(f"Deleted entry {idx}.")
 
     print_ledger(ledger_path, n=args.n)
 
