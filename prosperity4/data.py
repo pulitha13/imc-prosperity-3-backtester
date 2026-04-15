@@ -4,10 +4,16 @@ from dataclasses import dataclass
 from prosperity4.datamodel import Symbol, Trade
 from prosperity4.file_reader import FileReader
 
-LIMITS = {
-    "EMERALDS": 80,
-    "TOMATOES": 80,
+ROUND_LIMITS = {
+    1: {
+        "ASH_COATED_OSMIUM": 80,
+        "INTARIAN_PEPPER_ROOT": 80,
+    },
 }
+
+
+def get_limits(round_num: int) -> dict[str, int]:
+    return ROUND_LIMITS.get(round_num, {})
 
 
 @dataclass
