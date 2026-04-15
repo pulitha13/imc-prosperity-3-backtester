@@ -6,17 +6,18 @@ from importlib import import_module, metadata, reload
 from pathlib import Path
 from typing import Annotated, Any, Optional
 
+import typer
 from typer import Argument, Option, Typer
 
-from prosperity4.data import has_day_data
-from prosperity4.file_reader import FileReader, FileSystemReader, PackageResourcesReader
-from prosperity4.models import BacktestResult, TradeMatchingMode
-from prosperity4.open import open_visualizer
-from prosperity4.runner import run_backtest
+from prosperity3bt.data import has_day_data
+from prosperity3bt.file_reader import FileReader, FileSystemReader, PackageResourcesReader
+from prosperity3bt.models import BacktestResult, TradeMatchingMode
+from prosperity3bt.open import open_visualizer
+from prosperity3bt.runner import run_backtest
+
 import json
-
-DIST_NAME = "prosperity3bt"
-
+import itertools
+import heapq
 
 def parse_algorithm(algorithm: Path) -> Any:
     sys.path.append(str(algorithm.parent))
@@ -62,21 +63,17 @@ def parse_days(file_reader: FileReader, days: list[str]) -> list[tuple[int, int]
 
     return parsed_days
 
-def parse_out(out: Optional[Path], no_out: bool, csv: bool) -> Optional[Path]:
 
+def parse_out(out: Optional[Path], no_out: bool) -> Optional[Path]:
     if out is not None:
         return out
 
     if no_out:
         return None
 
-    if csv:
-        timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-        # Return a directory path instead of a .log file
-        return Path.cwd() / "backtests" / timestamp
-
     timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
     return Path.cwd() / "backtests" / f"{timestamp}.log"
+
 
 def print_day_summary(result: BacktestResult) -> None:
     last_timestamp = result.activity_logs[-1].timestamp
@@ -131,7 +128,7 @@ def merge_results(
     return BacktestResult(a.round_num, a.day_num, sandbox_logs, activity_logs, trades)
 
 
-def write_output_json(output_file: Path, merged_results: BacktestResult) -> None:
+def write_output(output_file: Path, merged_results: BacktestResult) -> None:
     output_file.parent.mkdir(parents=True, exist_ok=True)
     with output_file.open("w+", encoding="utf-8") as file:
         file.write("Sandbox logs:\n")
@@ -143,48 +140,12 @@ def write_output_json(output_file: Path, merged_results: BacktestResult) -> None
             "day;timestamp;product;bid_price_1;bid_volume_1;bid_price_2;bid_volume_2;bid_price_3;bid_volume_3;ask_price_1;ask_volume_1;ask_price_2;ask_volume_2;ask_price_3;ask_volume_3;mid_price;profit_and_loss\n"
         )
         file.write("\n".join(map(str, merged_results.activity_logs)))
+
         file.write("\n\n\n\n\nTrade History:\n")
         file.write("[\n")
         file.write(",\n".join(map(str, merged_results.trades)))
         file.write("]")
 
-def write_output_csv(output_base: Path, results: list[BacktestResult]) -> None:
-    if not results:
-        return
-
-    r_num = results[0].round_num
-    # 1. Create the nested directory (e.g., backtests/2026-04-10_18-43-00/r0/)
-    output_dir = output_base / f"r{r_num}"
-    output_dir.mkdir(parents=True, exist_ok=True)
-
-    # 2. Write the Sandbox log text file (combined for all days)
-    sandbox_file = output_dir / "sandbox.log"
-    with sandbox_file.open("w+", encoding="utf-8") as s_file:
-        for result in results:
-            s_file.write(f"--- Round {result.round_num} Day {result.day_num} ---\n")
-            for row in result.sandbox_logs:
-                s_file.write(str(row))
-
-    # 3. Write separate CSVs for each day
-    for result in results:
-        r_num = result.round_num
-        d_num = result.day_num
-
-        prices_file = output_dir / f"prices_round_{r_num}_day_{d_num}.csv"
-        with prices_file.open("w+", encoding="utf-8") as file:
-            file.write("day;timestamp;product;bid_price_1;bid_volume_1;bid_price_2;bid_volume_2;bid_price_3;bid_volume_3;ask_price_1;ask_volume_1;ask_price_2;ask_volume_2;ask_price_3;ask_volume_3;mid_price;profit_and_loss\n")
-            file.write("\n".join(map(str, result.activity_logs)))
-
-        trades_file = output_dir / f"trades_round_{r_num}_day_{d_num}.csv"
-        with trades_file.open("w+", encoding="utf-8") as file:
-            file.write("timestamp;buyer;seller;symbol;currency;price;quantity\n")
-            for trade in result.trades:
-                try:
-                    t_dict = json.loads(str(trade).replace("'", '"'))
-                    row = f"{t_dict.get('timestamp', '')};{t_dict.get('buyer', '')};{t_dict.get('seller', '')};{t_dict.get('symbol', '')};{t_dict.get('currency', '')};{t_dict.get('price', '')};{t_dict.get('quantity', '')}"
-                    file.write(row + "\n")
-                except Exception:
-                    pass
 
 def print_overall_summary(results: list[BacktestResult]) -> None:
     print("Profit summary:")
@@ -204,6 +165,7 @@ def print_overall_summary(results: list[BacktestResult]) -> None:
         total_profit += profit
 
     print(f"Total profit: {total_profit:,.0f}")
+    return total_profit
 
 
 def format_path(path: Path) -> str:
@@ -216,7 +178,7 @@ def format_path(path: Path) -> str:
 
 def version_callback(value: bool) -> None:
     if value:
-        print(f"prosperity4 {metadata.version(DIST_NAME)}")
+        print(f"prosperity3bt {metadata.version(__package__)}")
         sys.exit(0)
 
 
@@ -231,14 +193,16 @@ def cli(
     vis: Annotated[bool, Option("--vis", help="Open backtest results in https://jmerle.github.io/imc-prosperity-3-visualizer/ when done.")] = False,
     out: Annotated[Optional[Path], Option(help="File to save output log to (defaults to backtests/<timestamp>.log).", show_default=False, dir_okay=False, resolve_path=True)] = None,
     no_out: Annotated[bool, Option("--no-out", help="Skip saving output log.")] = False,
-    csv: Annotated[bool, Option("--csv", help="Save output log to csv files instead of json (defaults to backtests/<timestamp>/)")] = False,
-    data: Annotated[Optional[Path], Option(help="Path to data directory. Must look similar in structure to https://github.com/jmerle/imc-prosperity-3-backtester/tree/master/prosperity4/resources.", show_default=False, exists=True, file_okay=False, dir_okay=True, resolve_path=True)] = None,
+    data: Annotated[Optional[Path], Option(help="Path to data directory. Must look similar in structure to https://github.com/jmerle/imc-prosperity-3-backtester/tree/master/prosperity3bt/resources.", show_default=False, exists=True, file_okay=False, dir_okay=True, resolve_path=True)] = None,
     print_output: Annotated[bool, Option("--print", help="Print the trader's output to stdout while it's running.")] = False,
     match_trades: Annotated[TradeMatchingMode, Option(help="How to match orders against market trades. 'all' matches trades with prices equal to or worse than your quotes, 'worse' matches trades with prices worse than your quotes, 'none' does not match trades against orders at all.")] = TradeMatchingMode.all,
     no_progress: Annotated[bool, Option("--no-progress", help="Don't show progress bars.")] = False,
     original_timestamps: Annotated[bool, Option("--original-timestamps", help="Preserve original timestamps in output log rather than making them increase across days.")] = False,
     version: Annotated[bool, Option("--version", "-v", help="Show the program's version number and exit.", is_eager=True, callback=version_callback)] = False,
+    grid_search: Annotated[bool, Option("--grid-search", help="Run the backtester in grid search mode. NOTE: MUST PROVIDE --param-file arg.")] = False,
+    param_file: Annotated[Optional[Path], Option("--param-file", help="Path to the grid search parameter file.", show_default=False, exists=True, file_okay=True, dir_okay=False, resolve_path=True)] = None,
 ) -> None:  # fmt: skip
+    
     if out is not None and no_out:
         print("Error: --out and --no-out are mutually exclusive")
         sys.exit(1)
@@ -252,46 +216,128 @@ def cli(
     if not hasattr(trader_module, "Trader"):
         print(f"{algorithm} does not expose a Trader class")
         sys.exit(1)
+    
+    if grid_search:
+
+        if not param_file:
+            raise typer.BadParameter("You must provide --param-file when --grid-search is enabled.")
+    
+        if vis:
+            raise typer.BadParameter("You cannot run visualizer when --grid-search is enabled.")
+
+    
+    params = None
+    if param_file:
+
+        if not grid_search:
+            raise typer.BadParameter("You cannot use --param-file when --grid-search is not enabled.")
+            
+        with open(param_file, 'r') as file:
+            try:
+                params = json.load(file)
+            except Exception as e:
+                raise typer.BadParameter(f"Poor --param-file formatting {e}")
+
+        # Get the parameter names and the list of value combinations
+        keys = params.keys()
+        param_combos = itertools.product(*params.values())
 
     file_reader = parse_data(data)
     parsed_days = parse_days(file_reader, days)
-    output_file = parse_out(out, no_out, csv)
+    output_file = parse_out(out, no_out)
 
     show_progress_bars = not no_progress and not print_output
 
-    results = []
-    for round_num, day_num in parsed_days:
-        print(f"Backtesting {algorithm} on round {round_num} day {day_num}")
 
-        reload(trader_module)
+    if not grid_search:
+        # TODO: Potentially collapse this whole block into one function call...
+        results = []
+        for round_num, day_num in parsed_days:
+            print(f"Backtesting {algorithm} on round {round_num} day {day_num}")
 
-        result = run_backtest(
-            trader_module.Trader(),
-            file_reader,
-            round_num,
-            day_num,
-            print_output,
-            match_trades,
-            True,
-            show_progress_bars,
-        )
+            reload(trader_module)
 
-        print_day_summary(result)
+            result = run_backtest(
+                trader_module.Trader(),
+                file_reader,
+                round_num,
+                day_num,
+                print_output,
+                match_trades,
+                True,
+                show_progress_bars,
+            )
+
+            print_day_summary(result)
+            if len(parsed_days) > 1:
+                print()
+
+            results.append(result)
+
         if len(parsed_days) > 1:
-            print()
+            print_overall_summary(results)
+    
+    else:
 
-        results.append(result)
+        print("\n" + "=" * 60)
+        grid_results = []
+        iter = 0
+        for combo in param_combos:
+            
+            param_set = dict(zip(keys, combo))
+            results = []
 
-    if len(parsed_days) > 1:
-        print_overall_summary(results)
+            print(f"Run with parameters: {param_set}")
 
-    if output_file is not None:
-        if csv:
-            write_output_csv(output_file, results)
-            print(f"\nSuccessfully saved backtest results to {format_path(output_file)}")
-        else:
-            merged_results = reduce(lambda a, b: merge_results(a, b, merge_pnl, not original_timestamps), results)
-            write_output_json(output_file, merged_results)
+            for round_num, day_num in parsed_days:
+                print(f"Backtesting {algorithm} on round {round_num} day {day_num}")
+
+                reload(trader_module)
+
+                result = run_backtest(
+                    trader_module.Trader(param_set),
+                    file_reader,
+                    round_num,
+                    day_num,
+                    print_output,
+                    match_trades,
+                    True,
+                    show_progress_bars,
+                )
+
+                # print_day_summary(result)
+                # if len(parsed_days) > 1:
+                #     print()
+
+                results.append(result)
+
+            
+            if len(parsed_days) > 0:
+
+                total_profit = print_overall_summary(results)
+                grid_result = {'profit': total_profit, 'params': param_set}
+                heapq.heappush(grid_results, (total_profit, iter, grid_result))
+
+                # This is necessary for tie-breaking = profits
+                iter += 1             
+            
+            print("=" * 60)
+        
+        # TODO: Create print grid results which prints unhardcoded top N
+        top_results = heapq.nlargest(5, grid_results)
+        top_results = [entry[2] for entry in top_results]
+
+        print(f"TOTAL RESULTS\n")
+        print(f"1ST BEST TOTAL PROFIT: {top_results[0]['profit']}\nASSOCIATED PARAMS: {top_results[0]['params']}")
+        print(f"2ND BEST TOTAL PROFIT: {top_results[1]['profit']}\nASSOCIATED PARAMS: {top_results[1]['params']}")
+        print(f"3RD BEST TOTAL PROFIT: {top_results[2]['profit']}\nASSOCIATED PARAMS: {top_results[2]['params']}")
+        print(f"4TH BEST TOTAL PROFIT: {top_results[3]['profit']}\nASSOCIATED PARAMS: {top_results[3]['params']}")
+        print(f"5TH BEST TOTAL PROFIT: {top_results[4]['profit']}\nASSOCIATED PARAMS: {top_results[4]['params']}")
+
+    if output_file is not None and not grid_search:
+        merged_results = reduce(lambda a, b: merge_results(a, b, merge_pnl, not original_timestamps), results)
+        write_output(output_file, merged_results)
+        print(f"\nSuccessfully saved backtest results to {format_path(output_file)}")
 
     if vis and output_file is not None:
         open_visualizer(output_file)
