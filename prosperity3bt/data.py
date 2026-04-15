@@ -4,23 +4,98 @@ from dataclasses import dataclass
 from prosperity3bt.datamodel import Symbol, Trade
 from prosperity3bt.file_reader import FileReader
 
-LIMITS = {
-    "RAINFOREST_RESIN": 50,
-    "KELP": 50,
-    "SQUID_INK": 50,
-    "CROISSANTS": 250,
-    "JAMS": 350,
-    "DJEMBES": 60,
-    "PICNIC_BASKET1": 60,
-    "PICNIC_BASKET2": 100,
-    "VOLCANIC_ROCK": 400,
-    "VOLCANIC_ROCK_VOUCHER_9500": 200,
-    "VOLCANIC_ROCK_VOUCHER_9750": 200,
-    "VOLCANIC_ROCK_VOUCHER_10000": 200,
-    "VOLCANIC_ROCK_VOUCHER_10250": 200,
-    "VOLCANIC_ROCK_VOUCHER_10500": 200,
-    "MAGNIFICENT_MACARONS": 75,
+ROUND_LIMITS = {
+    0: {
+        "RAINFOREST_RESIN": 50,
+        "KELP": 50,
+    },
+    1: {
+        "RAINFOREST_RESIN": 80,
+        "KELP": 80,
+        "SQUID_INK": 80,
+    },
+    2: {
+        "RAINFOREST_RESIN": 50,
+        "KELP": 50,
+        "SQUID_INK": 50,
+        "CROISSANTS": 250,
+        "JAMS": 350,
+        "DJEMBES": 60,
+        "PICNIC_BASKET1": 60,
+        "PICNIC_BASKET2": 100,
+    },
+    3: {
+        "RAINFOREST_RESIN": 50,
+        "KELP": 50,
+        "SQUID_INK": 50,
+        "CROISSANTS": 250,
+        "JAMS": 350,
+        "DJEMBES": 60,
+        "PICNIC_BASKET1": 60,
+        "PICNIC_BASKET2": 100,
+    },
+    4: {
+        "RAINFOREST_RESIN": 50,
+        "KELP": 50,
+        "SQUID_INK": 50,
+        "CROISSANTS": 250,
+        "JAMS": 350,
+        "DJEMBES": 60,
+        "PICNIC_BASKET1": 60,
+        "PICNIC_BASKET2": 100,
+    },
+    5: {
+        "RAINFOREST_RESIN": 50,
+        "KELP": 50,
+        "SQUID_INK": 50,
+        "CROISSANTS": 250,
+        "JAMS": 350,
+        "DJEMBES": 60,
+        "PICNIC_BASKET1": 60,
+        "PICNIC_BASKET2": 100,
+        "VOLCANIC_ROCK": 400,
+        "VOLCANIC_ROCK_VOUCHER_9500": 200,
+        "VOLCANIC_ROCK_VOUCHER_9750": 200,
+        "VOLCANIC_ROCK_VOUCHER_10000": 200,
+        "VOLCANIC_ROCK_VOUCHER_10250": 200,
+        "VOLCANIC_ROCK_VOUCHER_10500": 200,
+    },
+    6: {
+        "RAINFOREST_RESIN": 50,
+        "KELP": 50,
+        "SQUID_INK": 50,
+        "CROISSANTS": 250,
+        "JAMS": 350,
+        "DJEMBES": 60,
+        "PICNIC_BASKET1": 60,
+        "PICNIC_BASKET2": 100,
+    },
+    7: {
+        "RAINFOREST_RESIN": 50,
+        "KELP": 50,
+        "SQUID_INK": 50,
+        "CROISSANTS": 250,
+        "JAMS": 350,
+        "DJEMBES": 60,
+        "PICNIC_BASKET1": 60,
+        "PICNIC_BASKET2": 100,
+    },
+    8: {
+        "RAINFOREST_RESIN": 50,
+        "KELP": 50,
+        "SQUID_INK": 50,
+        "CROISSANTS": 250,
+        "JAMS": 350,
+        "DJEMBES": 60,
+        "PICNIC_BASKET1": 60,
+        "PICNIC_BASKET2": 100,
+        "MAGNIFICENT_MACARONS": 75,
+    },
 }
+
+
+def get_limits(round_num: int) -> dict[str, int]:
+    return ROUND_LIMITS.get(round_num, {})
 
 
 @dataclass

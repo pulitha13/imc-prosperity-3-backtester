@@ -5,7 +5,7 @@ from io import StringIO
 from IPython.utils.io import Tee
 from tqdm import tqdm
 
-from prosperity4.data import LIMITS, BacktestData, read_day_data
+from prosperity4.data import BacktestData, get_limits, read_day_data
 from prosperity4.datamodel import (
     Listing,
     Observation,
@@ -65,14 +65,22 @@ def create_activity_logs(
     data: BacktestData,
     result: BacktestResult,
 ) -> None:
+    last_profit_loss = {}
+    for row in reversed(result.activity_logs):
+        product = row.columns[2]
+        if product not in last_profit_loss:
+            last_profit_loss[product] = row.columns[-1]
+
     for product in data.products:
         row = data.prices[state.timestamp][product]
 
         product_profit_loss = data.profit_loss[product]
 
         position = state.position.get(product, 0)
-        if position != 0:
+        if position != 0 and row.mid_price > 0:
             product_profit_loss += position * row.mid_price
+        elif position != 0:
+            product_profit_loss = last_profit_loss.get(product, product_profit_loss)
 
         bid_prices_len = len(row.bid_prices)
         bid_volumes_len = len(row.bid_volumes)
@@ -109,6 +117,7 @@ def enforce_limits(
     sandbox_row: SandboxLogRow,
 ) -> None:
     sandbox_log_lines = []
+    limits = get_limits(data.round_num)
     for product in data.products:
         product_orders = orders.get(product, [])
         product_position = state.position.get(product, 0)
@@ -116,8 +125,9 @@ def enforce_limits(
         total_long = sum(order.quantity for order in product_orders if order.quantity > 0)
         total_short = sum(abs(order.quantity) for order in product_orders if order.quantity < 0)
 
-        if product_position + total_long > LIMITS[product] or product_position - total_short < -LIMITS[product]:
-            sandbox_log_lines.append(f"Orders for product {product} exceeded limit of {LIMITS[product]} set")
+        limit = limits[product]
+        if product_position + total_long > limit or product_position - total_short < -limit:
+            sandbox_log_lines.append(f"Orders for product {product} exceeded limit of {limit} set")
             orders.pop(product)
 
     if len(sandbox_log_lines) > 0:
