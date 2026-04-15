@@ -30,6 +30,7 @@ build-backend = "setuptools.build_meta"
 prosperity3bt = "prosperity3bt.__main__:main"
 prosperity4 = "prosperity4.__main__:main"
 bt = "prosperity4.__main__:main"
+ledger = "prosperity4.ledger_display:main"
 
 [project.urls]
 Repository = "https://github.com/jmerle/imc-prosperity-3-backtester"

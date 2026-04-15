@@ -1,19 +1,21 @@
+import json
+import subprocess
 import sys
 from collections import defaultdict
-from datetime import datetime
+from datetime import datetime, timezone
 from functools import reduce
 from importlib import import_module, metadata, reload
 from pathlib import Path
-from typing import Annotated, Any, Optional
+from typing import Annotated, Any, List, Optional
 
 from typer import Argument, Option, Typer
 
 from prosperity4.data import has_day_data
 from prosperity4.file_reader import FileReader, FileSystemReader, PackageResourcesReader
 from prosperity4.models import BacktestResult, TradeMatchingMode
+from prosperity4.ledger_display import print_ledger
 from prosperity4.open import open_visualizer
 from prosperity4.runner import run_backtest
-import json
 
 DIST_NAME = "prosperity3bt"
 
@@ -214,6 +216,76 @@ def format_path(path: Path) -> str:
         return str(path)
 
 
+def find_git_root(path: Path) -> Path:
+    """Walk up from path to find the nearest .git directory."""
+    for candidate in [path] + list(path.parents):
+        if (candidate / ".git").exists():
+            return candidate
+    return path
+
+
+def get_git_info(repo_root: Path) -> dict:
+    def run(cmd: List[str]) -> str:
+        r = subprocess.run(cmd, capture_output=True, text=True, cwd=repo_root)
+        return r.stdout.strip()
+
+    return {
+        "hash": run(["git", "rev-parse", "HEAD"]),
+        "short_hash": run(["git", "rev-parse", "--short", "HEAD"]),
+        "branch": run(["git", "rev-parse", "--abbrev-ref", "HEAD"]),
+        "dirty": bool(run(["git", "status", "--porcelain"])),
+        "message": run(["git", "log", "-1", "--format=%s"]),
+    }
+
+
+def extract_pnl(results: List[BacktestResult]) -> dict:
+    """Return per-day PnL keyed by 'r<round>_d<day>'."""
+    per_day = {}
+    for result in results:
+        last_ts = result.activity_logs[-1].timestamp
+        products: dict = {}
+        for row in reversed(result.activity_logs):
+            if row.timestamp != last_ts:
+                break
+            products[row.columns[2]] = round(row.columns[-1])
+        key = f"r{result.round_num}_d{result.day_num}"
+        per_day[key] = {
+            "round": result.round_num,
+            "day": result.day_num,
+            "products": products,
+            "total": sum(products.values()),
+        }
+    return per_day
+
+
+def write_ledger_entry(algorithm: Path, results: List[BacktestResult]) -> None:
+    repo_root = find_git_root(algorithm.parent)
+    ledger_path = repo_root / "ledger.jsonl"
+
+    per_day = extract_pnl(results)
+    total_pnl = sum(v["total"] for v in per_day.values())
+
+    try:
+        alg_str = str(algorithm.relative_to(repo_root))
+    except ValueError:
+        alg_str = str(algorithm)
+
+    entry = {
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "git": get_git_info(repo_root),
+        "algorithm": alg_str,
+        "days": [{"round": v["round"], "day": v["day"]} for v in per_day.values()],
+        "pnl": per_day,
+        "total_pnl": total_pnl,
+    }
+
+    with ledger_path.open("a", encoding="utf-8") as f:
+        f.write(json.dumps(entry) + "\n")
+
+    new_index = sum(1 for line in ledger_path.read_text(encoding="utf-8").splitlines() if line.strip()) - 1
+    print_ledger(ledger_path, new_index=new_index)
+
+
 def version_callback(value: bool) -> None:
     if value:
         print(f"prosperity4 {metadata.version(DIST_NAME)}")
@@ -237,6 +309,7 @@ def cli(
     match_trades: Annotated[TradeMatchingMode, Option(help="How to match orders against market trades. 'all' matches trades with prices equal to or worse than your quotes, 'worse' matches trades with prices worse than your quotes, 'none' does not match trades against orders at all.")] = TradeMatchingMode.all,
     no_progress: Annotated[bool, Option("--no-progress", help="Don't show progress bars.")] = False,
     original_timestamps: Annotated[bool, Option("--original-timestamps", help="Preserve original timestamps in output log rather than making them increase across days.")] = False,
+    post: Annotated[bool, Option("--post", help="Record backtest results (git info + per-product PnL) to ledger.jsonl in the algorithm's repo root.")] = False,
     version: Annotated[bool, Option("--version", "-v", help="Show the program's version number and exit.", is_eager=True, callback=version_callback)] = False,
 ) -> None:  # fmt: skip
     if out is not None and no_out:
@@ -295,6 +368,9 @@ def cli(
 
     if vis and output_file is not None:
         open_visualizer(output_file)
+
+    if post:
+        write_ledger_entry(algorithm, results)
 
 
 def main() -> None:
