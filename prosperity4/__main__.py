@@ -6,6 +6,7 @@ from importlib import import_module, metadata, reload
 from pathlib import Path
 from typing import Annotated, Any, Optional
 
+import typer
 from typer import Argument, Option, Typer
 
 from prosperity4.data import has_day_data
@@ -17,6 +18,9 @@ import json
 
 DIST_NAME = "prosperity3bt"
 
+import json
+import itertools
+import heapq
 
 def parse_algorithm(algorithm: Path) -> Any:
     sys.path.append(str(algorithm.parent))
@@ -204,6 +208,7 @@ def print_overall_summary(results: list[BacktestResult]) -> None:
         total_profit += profit
 
     print(f"Total profit: {total_profit:,.0f}")
+    return total_profit
 
 
 def format_path(path: Path) -> str:
@@ -232,13 +237,16 @@ def cli(
     out: Annotated[Optional[Path], Option(help="File to save output log to (defaults to backtests/<timestamp>.log).", show_default=False, dir_okay=False, resolve_path=True)] = None,
     no_out: Annotated[bool, Option("--no-out", help="Skip saving output log.")] = False,
     csv: Annotated[bool, Option("--csv", help="Save output log to csv files instead of json (defaults to backtests/<timestamp>/)")] = False,
-    data: Annotated[Optional[Path], Option(help="Path to data directory. Must look similar in structure to https://github.com/jmerle/imc-prosperity-3-backtester/tree/master/prosperity4/resources.", show_default=False, exists=True, file_okay=False, dir_okay=True, resolve_path=True)] = None,
+    data: Annotated[Optional[Path], Option(help="Path to data directory. Must look similar in structure to https://github.com/jmerle/imc-prosperity-3-backtester/tree/master/prosperity3bt/resources.", show_default=False, exists=True, file_okay=False, dir_okay=True, resolve_path=True)] = None,
     print_output: Annotated[bool, Option("--print", help="Print the trader's output to stdout while it's running.")] = False,
     match_trades: Annotated[TradeMatchingMode, Option(help="How to match orders against market trades. 'all' matches trades with prices equal to or worse than your quotes, 'worse' matches trades with prices worse than your quotes, 'none' does not match trades against orders at all.")] = TradeMatchingMode.all,
     no_progress: Annotated[bool, Option("--no-progress", help="Don't show progress bars.")] = False,
     original_timestamps: Annotated[bool, Option("--original-timestamps", help="Preserve original timestamps in output log rather than making them increase across days.")] = False,
     version: Annotated[bool, Option("--version", "-v", help="Show the program's version number and exit.", is_eager=True, callback=version_callback)] = False,
+    grid_search: Annotated[bool, Option("--grid-search", help="Run the backtester in grid search mode. NOTE: MUST PROVIDE --param-file arg.")] = False,
+    param_file: Annotated[Optional[Path], Option("--param-file", help="Path to the grid search parameter file.", show_default=False, exists=True, file_okay=True, dir_okay=False, resolve_path=True)] = None,
 ) -> None:  # fmt: skip
+    
     if out is not None and no_out:
         print("Error: --out and --no-out are mutually exclusive")
         sys.exit(1)
@@ -252,6 +260,31 @@ def cli(
     if not hasattr(trader_module, "Trader"):
         print(f"{algorithm} does not expose a Trader class")
         sys.exit(1)
+    
+    if grid_search:
+
+        if not param_file:
+            raise typer.BadParameter("You must provide --param-file when --grid-search is enabled.")
+    
+        if vis:
+            raise typer.BadParameter("You cannot run visualizer when --grid-search is enabled.")
+
+    
+    params = None
+    if param_file:
+
+        if not grid_search:
+            raise typer.BadParameter("You cannot use --param-file when --grid-search is not enabled.")
+            
+        with open(param_file, 'r') as file:
+            try:
+                params = json.load(file)
+            except Exception as e:
+                raise typer.BadParameter(f"Poor --param-file formatting {e}")
+
+        # Get the parameter names and the list of value combinations
+        keys = params.keys()
+        param_combos = itertools.product(*params.values())
 
     file_reader = parse_data(data)
     parsed_days = parse_days(file_reader, days)
@@ -259,33 +292,92 @@ def cli(
 
     show_progress_bars = not no_progress and not print_output
 
-    results = []
-    for round_num, day_num in parsed_days:
-        print(f"Backtesting {algorithm} on round {round_num} day {day_num}")
 
-        reload(trader_module)
+    if not grid_search:
+        # TODO: Potentially collapse this whole block into one function call...
+        results = []
+        for round_num, day_num in parsed_days:
+            print(f"Backtesting {algorithm} on round {round_num} day {day_num}")
 
-        result = run_backtest(
-            trader_module.Trader(),
-            file_reader,
-            round_num,
-            day_num,
-            print_output,
-            match_trades,
-            True,
-            show_progress_bars,
-        )
+            reload(trader_module)
 
-        print_day_summary(result)
+            result = run_backtest(
+                trader_module.Trader(),
+                file_reader,
+                round_num,
+                day_num,
+                print_output,
+                match_trades,
+                True,
+                show_progress_bars,
+            )
+
+            print_day_summary(result)
+            if len(parsed_days) > 1:
+                print()
+
+            results.append(result)
+
         if len(parsed_days) > 1:
-            print()
+            print_overall_summary(results)
+    
+    else:
 
-        results.append(result)
+        print("\n" + "=" * 60)
+        grid_results = []
+        iter = 0
+        for combo in param_combos:
+            
+            param_set = dict(zip(keys, combo))
+            results = []
 
-    if len(parsed_days) > 1:
-        print_overall_summary(results)
+            print(f"Run with parameters: {param_set}")
 
-    if output_file is not None:
+            for round_num, day_num in parsed_days:
+                print(f"Backtesting {algorithm} on round {round_num} day {day_num}")
+
+                reload(trader_module)
+
+                result = run_backtest(
+                    trader_module.Trader(param_set),
+                    file_reader,
+                    round_num,
+                    day_num,
+                    print_output,
+                    match_trades,
+                    True,
+                    show_progress_bars,
+                )
+
+                # print_day_summary(result)
+                # if len(parsed_days) > 1:
+                #     print()
+
+                results.append(result)
+
+            
+            if len(parsed_days) > 0:
+
+                total_profit = print_overall_summary(results)
+                grid_result = {'profit': total_profit, 'params': param_set}
+                heapq.heappush(grid_results, (total_profit, iter, grid_result))
+
+                # This is necessary for tie-breaking = profits
+                iter += 1             
+            
+            print("=" * 60)
+        
+        # TODO: Create print grid results which prints unhardcoded top N
+        top_results = heapq.nlargest(5, grid_results)
+        top_results = [entry[2] for entry in top_results]
+
+        print(f"TOTAL RESULTS\n")
+        print(f"1ST BEST TOTAL PROFIT: {top_results[0]['profit']}\nASSOCIATED PARAMS: {top_results[0]['params']}")
+        print(f"2ND BEST TOTAL PROFIT: {top_results[1]['profit']}\nASSOCIATED PARAMS: {top_results[1]['params']}")
+        print(f"3RD BEST TOTAL PROFIT: {top_results[2]['profit']}\nASSOCIATED PARAMS: {top_results[2]['params']}")
+
+    if output_file is not None and not grid_search:
+
         if csv:
             write_output_csv(output_file, results)
             print(f"\nSuccessfully saved backtest results to {format_path(output_file)}")
