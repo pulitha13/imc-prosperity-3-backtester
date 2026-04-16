@@ -299,6 +299,25 @@ def match_orders(
         result.trades.extend([TradeRow(trade) for trade in remaining_market_trades])
 
 
+def match_conversions(state: TradingState, data: BacktestData, conversions: int):
+
+    if None == conversions: return
+
+    for product_symb, observation in state.observations.conversionObservations.items():
+        
+        if state.position.get(product_symb, 0) == 0:
+            return
+
+        if conversions < 0:
+            state.position[product_symb] = state.position[product_symb] + conversions
+            implied_bid = observation.bidPrice - observation.exportTariff - observation.transportFees
+            data.profit_loss[product_symb] -= implied_bid * conversions 
+    
+        elif conversions > 0:
+            state.position[product_symb] = state.position[product_symb] + conversions
+            implied_ask = observation.askPrice + observation.importTariff + observation.transportFees
+            data.profit_loss[product_symb] -= implied_ask * conversions
+        
 def run_backtest(
     trader,
     file_reader: FileReader,
