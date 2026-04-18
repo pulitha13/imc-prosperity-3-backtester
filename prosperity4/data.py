@@ -9,6 +9,10 @@ ROUND_LIMITS = {
         "ASH_COATED_OSMIUM": 80,
         "INTARIAN_PEPPER_ROOT": 80,
     },
+    2: {
+        "ASH_COATED_OSMIUM": 80,
+        "INTARIAN_PEPPER_ROOT": 80,
+    },
 }
 
 
