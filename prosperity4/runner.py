@@ -64,13 +64,8 @@ def create_activity_logs(
     state: TradingState,
     data: BacktestData,
     result: BacktestResult,
+    last_profit_loss: dict[Symbol, float],
 ) -> None:
-    last_profit_loss = {}
-    for row in reversed(result.activity_logs):
-        product = row.columns[2]
-        if product not in last_profit_loss:
-            last_profit_loss[product] = row.columns[-1]
-
     for product in data.products:
         row = data.prices[state.timestamp][product]
 
@@ -108,6 +103,7 @@ def create_activity_logs(
         ]
 
         result.activity_logs.append(ActivityLogRow(columns))
+        last_profit_loss[product] = product_profit_loss
 
 
 def enforce_limits(
@@ -352,6 +348,7 @@ def run_backtest(
         activity_logs=[],
         trades=[],
     )
+    last_profit_loss: dict[Symbol, float] = {}
 
     timestamps = sorted(data.prices.keys())
     timestamps_iterator = tqdm(timestamps, ascii=True) if show_progress_bar else timestamps
@@ -384,7 +381,7 @@ def run_backtest(
         result.sandbox_logs.append(sandbox_row)
 
         type_check_orders(orders)
-        create_activity_logs(state, data, result)
+        create_activity_logs(state, data, result, last_profit_loss)
         enforce_limits(state, data, orders, sandbox_row)
         match_orders(state, data, orders, result, trade_matching_mode)
 
