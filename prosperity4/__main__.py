@@ -14,6 +14,7 @@ from prosperity4.file_reader import FileReader, FileSystemReader, PackageResourc
 from prosperity4.models import BacktestResult, TradeMatchingMode
 from prosperity4.open import open_visualizer
 from prosperity4.runner import run_backtest
+from prosperity4.prune_log import prune_log
 import json
 
 DIST_NAME = "prosperity4"
@@ -245,6 +246,7 @@ def cli(
     version: Annotated[bool, Option("--version", "-v", help="Show the program's version number and exit.", is_eager=True, callback=version_callback)] = False,
     grid_search: Annotated[bool, Option("--grid-search", help="Run the backtester in grid search mode. NOTE: MUST PROVIDE --param-file arg.")] = False,
     param_file: Annotated[Optional[Path], Option("--param-file", help="Path to the grid search parameter file.", show_default=False, exists=True, file_okay=True, dir_okay=False, resolve_path=True)] = None,
+    no_prune: Annotated[bool, Option("--no-prune", help="Do not prune the output log before opening it in the visualizer.")] = False,
 ) -> None:  # fmt: skip
     
     if out is not None and no_out:
@@ -386,6 +388,8 @@ def cli(
             write_output_json(output_file, merged_results)
 
     if vis and output_file is not None:
+        if not no_prune and not csv:
+            output_file = prune_log(output_file)
         open_visualizer(output_file)
 
 
