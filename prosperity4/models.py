@@ -81,7 +81,7 @@ class TradeRow:
     "symbol": "{self.trade.symbol}",
     "currency": "SEASHELLS",
     "price": {self.trade.price},
-    "quantity": {self.trade.quantity},
+    "quantity": {self.trade.quantity}
   }}
         """.strip()
         )

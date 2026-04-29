@@ -152,6 +152,13 @@ def write_output_json(output_file: Path, merged_results: BacktestResult) -> None
         file.write("[\n")
         file.write(",\n".join(map(str, merged_results.trades)))
         file.write("]")
+        
+        file.flush()
+        import os
+        try:
+            os.fsync(file.fileno())
+        except:
+            pass
 
 def write_output_csv(output_base: Path, results: list[BacktestResult]) -> None:
     if not results:
