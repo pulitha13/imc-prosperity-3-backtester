@@ -1,69 +1,101 @@
-import json
 import sys
 import re
 from pathlib import Path
-from typing import Set
+from typing import Set, Tuple
 import orjson
 
-def get_user_traded_products(input_path: Path) -> Set[str]:
-    """Finds products traded by SUBMISSION by reading from the end of the file."""
+def get_user_traded_products(input_path: Path) -> Tuple[Set[str], int]:
+    """Finds products traded by SUBMISSION and the position of Trade History section."""
     products = set()
-    with open(input_path, 'rb') as f:
-        # Seek toward the end of the file to find Trade History efficiently
-        f.seek(0, 2)
-        file_size = f.tell()
-        # Read the last 5MB, which should cover all trades for a typical day
-        seek_pos = max(0, file_size - 5 * 1024 * 1024)
-        f.seek(seek_pos)
-        chunk = f.read().decode('utf-8', errors='ignore')
-        
-        if "Trade History:" in chunk:
-            trades_section = chunk.split("Trade History:")[1].strip()
-            # Clean up non-standard JSON (trailing commas and potential single quotes from str() calls)
-            trades_json = re.sub(r',\s*([\]}])', r'\1', trades_section)
-            try:
-                trades_data = orjson.loads(trades_json)
-                for trade in trades_data:
-                    if trade.get("buyer") == "SUBMISSION" or trade.get("seller") == "SUBMISSION":
-                        products.add(trade.get("symbol"))
-            except Exception as e:
-                # Fallback to regex if JSON parsing fails on the chunk
-                matches = re.findall(r'"symbol":\s*"([^"]+)"', trades_section)
-                # This is a bit broad, so we check for SUBMISSION nearby
-                trade_blocks = re.findall(r'\{[^{}]*?SUBMISSION[^{}]*?\}', trades_section)
-                for block in trade_blocks:
-                    sym_match = re.search(r'"symbol":\s*"([^"]+)"', block)
+    marker = b"Trade History:"
+    found_pos = -1
+    
+    input_path = input_path.resolve()
+    
+    try:
+        if not input_path.exists():
+            return set(), -1
+            
+        file_size = input_path.stat().st_size
+        if file_size == 0:
+            return set(), -1
+
+        with open(input_path, 'rb') as f:
+            # Search backward in 10MB chunks, up to 300MB back
+            chunk_size = 10 * 1024 * 1024
+            
+            for i in range(1, 31):
+                pos = max(0, file_size - i * chunk_size)
+                f.seek(pos)
+                chunk = f.read(chunk_size + len(marker))
+                
+                idx = chunk.rfind(marker)
+                if idx != -1:
+                    found_pos = pos + idx
+                    break
+                if pos == 0:
+                    break
+            
+            # If not found in backward search, do a full scan (literal search is fast)
+            if found_pos == -1:
+                f.seek(0)
+                while True:
+                    curr_pos = f.tell()
+                    chunk = f.read(chunk_size + len(marker))
+                    if not chunk:
+                        break
+                    idx = chunk.find(marker)
+                    if idx != -1:
+                        found_pos = curr_pos + idx
+                        break
+                    if len(chunk) < chunk_size:
+                        break
+                    f.seek(curr_pos + chunk_size)
+
+            if found_pos != -1:
+                f.seek(found_pos + len(marker))
+                trades_section = f.read().decode('utf-8', errors='ignore')
+                
+                # Robustly find symbols traded by SUBMISSION using regex
+                # Look for "buyer": "SUBMISSION" or "seller": "SUBMISSION"
+                trade_blocks = re.finditer(r'\{[^{}]*?"(?:buyer|seller)"\s*:\s*"SUBMISSION"[^{}]*?\}', trades_section, re.DOTALL)
+                for match in trade_blocks:
+                    block = match.group(0)
+                    sym_match = re.search(r'"symbol"\s*:\s*"([^"]+)"', block)
                     if sym_match:
                         products.add(sym_match.group(1))
-    return products
+    except Exception:
+        pass
+                
+    return products, found_pos
 
 def prune_lambda_data(data, products):
     """Recursively prunes the visualizer state data."""
     if isinstance(data, list):
-        if len(data) > 0 and isinstance(data[0], list) and len(data[0]) == 3 and isinstance(data[0][0], str):
-            # Found listings: [[symbol, name, 1], ...]
-            return [x for x in data if x[0] in products]
+        if len(data) > 0 and isinstance(data[0], list) and len(data[0]) > 0 and isinstance(data[0][0], str):
+            # Found listings: [[symbol, name, 1], ...] or trades: [[symbol, price, qty, buyer, seller, ts], ...]
+            if len(data[0]) in (3, 6):
+                return [x for x in data if x[0] in products]
         return [prune_lambda_data(x, products) for x in data]
     
     if isinstance(data, dict):
         return {k: prune_lambda_data(v, products) for k, v in data.items() 
                 if k in products or not isinstance(v, (dict, list))}
     
-    if isinstance(data, str) and data:
-        # Prune log lines within lambdaLog
+    if isinstance(data, str) and '\n' in data:
+        # Prune multiline log lines within lambdaLog
         lines = data.split('\n')
         return "\n".join([l for l in lines if any(p in l for p in products) or not l.strip()])
         
     return data
 
 def prune_log(input_path: Path) -> Path:
+    input_path = input_path.resolve()
     output_path = input_path.with_name(f"{input_path.stem}-pruned{input_path.suffix}")
     
-    user_traded_products = get_user_traded_products(input_path)
+    user_traded_products, trades_marker_pos = get_user_traded_products(input_path)
     if not user_traded_products:
         print("No user trades found. Keeping all products.")
-        # We need a list of all products to avoid pruning everything
-        # For simplicity, if no trades, just return input_path or copy
         return input_path
 
     print(f"User traded products: {user_traded_products}")
@@ -106,7 +138,7 @@ def prune_log(input_path: Path) -> Path:
                         # Prune lambdaLog
                         if obj.get("lambdaLog"):
                             l_log = obj["lambdaLog"].strip()
-                            if l_log.startswith("[["):
+                            if l_log.startswith("[[") or l_log.startswith("{"):
                                 try:
                                     l_data = orjson.loads(l_log)
                                     l_data = prune_lambda_data(l_data, user_traded_products)
@@ -141,24 +173,40 @@ def prune_log(input_path: Path) -> Path:
                 fout.write(line.encode('utf-8'))
 
         # Handle Trade History
-        if section == "trades":
+        if section == "trades" and trades_marker_pos != -1:
             fout.write(b"[\n")
-            # We already identified user_traded_products, but we need to write the actual trade rows
-            # Read from the end again to get the full list
             with open(input_path, 'rb') as f:
-                f.seek(seek_pos if 'seek_pos' in locals() else 0)
-                chunk = f.read().decode('utf-8', errors='ignore')
-                if "Trade History:" in chunk:
-                    trades_json = re.sub(r',\s*([\]}])', r'\1', chunk.split("Trade History:")[1].strip())
-                    try:
-                        all_trades = orjson.loads(trades_json)
-                        pruned_trades = [t for t in all_trades if t.get("symbol") in user_traded_products]
-                        trade_lines = [orjson.dumps(t, option=orjson.OPT_INDENT_2).decode('utf-8').replace('\n', '\n  ') 
-                                       for t in pruned_trades]
-                        fout.write(",\n".join(trade_lines).encode('utf-8'))
-                    except:
-                        pass
-            fout.write(b"\n]")
+                f.seek(trades_marker_pos + len(b"Trade History:"))
+                trades_section = f.read().decode('utf-8', errors='ignore').strip()
+                
+                # Clean up potential trailing commas and wrap in brackets if needed
+                trades_json = trades_section
+                if not trades_json.startswith("["):
+                    trades_json = "[" + trades_json
+                if not trades_json.endswith("]"):
+                    trades_json = trades_json + "]"
+                
+                # Fix trailing commas before closing brackets
+                trades_json = re.sub(r',\s*([\]}])', r'\1', trades_json)
+                
+                try:
+                    all_trades = orjson.loads(trades_json)
+                    pruned_trades = [t for t in all_trades if t.get("symbol") in user_traded_products]
+                    
+                    # Write trades one by one to be more memory efficient than join()
+                    for i, t in enumerate(pruned_trades):
+                        trade_str = orjson.dumps(t, option=orjson.OPT_INDENT_2).decode('utf-8')
+                        # Add indentation to match original log format
+                        indented_trade = "  " + trade_str.replace("\n", "\n  ")
+                        fout.write(indented_trade.encode('utf-8'))
+                        if i < len(pruned_trades) - 1:
+                            fout.write(b",\n")
+                        else:
+                            fout.write(b"\n")
+                except Exception:
+                    # Fallback: just write the original if pruning fails
+                    fout.write(trades_section.encode('utf-8'))
+            fout.write(b"]")
 
     print(f"Pruned log saved to {output_path}")
     return output_path
