@@ -72,17 +72,18 @@ def get_user_traded_products(input_path: Path) -> Tuple[Set[str], int]:
 def prune_lambda_data(data, products):
     """Recursively prunes the visualizer state data."""
     if isinstance(data, list):
-        if len(data) > 0 and isinstance(data[0], list) and len(data[0]) == 3 and isinstance(data[0][0], str):
-            # Found listings: [[symbol, name, 1], ...]
-            return [x for x in data if x[0] in products]
+        if len(data) > 0 and isinstance(data[0], list) and len(data[0]) > 0 and isinstance(data[0][0], str):
+            # Found listings: [[symbol, name, 1], ...] or trades: [[symbol, price, qty, buyer, seller, ts], ...]
+            if len(data[0]) in (3, 6):
+                return [x for x in data if x[0] in products]
         return [prune_lambda_data(x, products) for x in data]
     
     if isinstance(data, dict):
         return {k: prune_lambda_data(v, products) for k, v in data.items() 
                 if k in products or not isinstance(v, (dict, list))}
     
-    if isinstance(data, str) and data:
-        # Prune log lines within lambdaLog
+    if isinstance(data, str) and '\n' in data:
+        # Prune multiline log lines within lambdaLog
         lines = data.split('\n')
         return "\n".join([l for l in lines if any(p in l for p in products) or not l.strip()])
         
